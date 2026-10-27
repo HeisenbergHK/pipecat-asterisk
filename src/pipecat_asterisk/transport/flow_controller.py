@@ -45,11 +45,17 @@ class FlowController:
     MAX_WS_SEND = 65500
 
     def __init__(
-        self, ptime: int, psize: int, websocket_client: FastAPIWebsocketClient
+        self,
+        ptime: int,
+        psize: int,
+        websocket_client: FastAPIWebsocketClient,
+        max_ws_send: int | None = None,
     ):
         self._ptime = ptime  # Audio chunk duration. In milliseconds
         self._psize = psize  # Audio chunk size. In bytes
         self._websocket_client = websocket_client
+        # Cap each websocket send; defaults to Asterisk's documented max message size.
+        self._max_ws_send = self.MAX_WS_SEND if max_ws_send is None else max_ws_send
         # Deque of bytes chunks (head == oldest). Total queued bytes is tracked
         # separately so the working-range check stays O(1) without walking the
         # deque. See `_pop_bytes` for how sends drain it.
@@ -174,7 +180,7 @@ class FlowController:
 
         # Calculate the number of bytes to send
         bytes_to_send = min(
-            self._local_buffer_size, self.MAX_WS_SEND
+            self._local_buffer_size, self._max_ws_send
         )  # Ensure we don't exceed the websocket maximum message size
         if bytes_to_send > 0:
             # Take the bytes to send from the head of the local buffer

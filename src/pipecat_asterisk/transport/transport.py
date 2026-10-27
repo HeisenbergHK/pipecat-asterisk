@@ -36,6 +36,7 @@ class AsteriskWebsocketOutputTransport(FastAPIWebsocketOutputTransport):
         transport: "AsteriskWebsocketTransport",
         client: FastAPIWebsocketClient,
         params: FastAPIWebsocketParams | None = None,
+        max_ws_send: int | None = None,
         **kwargs,
     ):
         if params is None:
@@ -46,6 +47,7 @@ class AsteriskWebsocketOutputTransport(FastAPIWebsocketOutputTransport):
             )
         super().__init__(transport, client, params, **kwargs)
         self._flow_controller = None
+        self._max_ws_send = max_ws_send
         self._debug_asterisk_status = kwargs.get('debug_asterisk_status', False)
 
     async def serialize(self, frame: Frame) -> bytes | str | None:
@@ -75,7 +77,9 @@ class AsteriskWebsocketOutputTransport(FastAPIWebsocketOutputTransport):
             )
             return
 
-        self._flow_controller = FlowController(ptime, psize, self._client)
+        self._flow_controller = FlowController(
+            ptime, psize, self._client, max_ws_send=self._max_ws_send
+        )
 
         logger.debug(
             f"Initialized flow controller with ptime={ptime} ms, psize={psize} bytes. Remote buffer low water mark: {self._flow_controller._remote_buffer_low_water} bytes, high water mark: {self._flow_controller._remote_buffer_high_water} bytes."
@@ -200,6 +204,7 @@ class AsteriskWebsocketTransport(FastAPIWebsocketTransport):
         params: FastAPIWebsocketParams | None = None,
         input_name: str | None = None,
         output_name: str | None = None,
+        max_ws_send: int | None = None,
     ):
         if params is None:
             params = FastAPIWebsocketParams(
@@ -210,5 +215,9 @@ class AsteriskWebsocketTransport(FastAPIWebsocketTransport):
         super().__init__(websocket, params, input_name, output_name)
 
         self._output = AsteriskWebsocketOutputTransport(
-            self, self._client, params, name=output_name
+            self,
+            self._client,
+            params,
+            name=output_name,
+            max_ws_send=max_ws_send,
         )

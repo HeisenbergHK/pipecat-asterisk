@@ -17,7 +17,7 @@ PTIME_MS = 20
 PSIZE_BYTES = 640  # slin16 @ 20ms == 16000 Hz * 2 bytes/sample * 0.02 s
 
 
-def _make_controller() -> FlowController:
+def _make_controller(max_ws_send: int | None = None) -> FlowController:
     """Build a controller with a mock websocket client.
 
     The controller starts its `flow_control` task in `__init__`, so this
@@ -25,7 +25,12 @@ def _make_controller() -> FlowController:
     """
     client = MagicMock()
     client.send = AsyncMock()
-    return FlowController(ptime=PTIME_MS, psize=PSIZE_BYTES, websocket_client=client)
+    return FlowController(
+        ptime=PTIME_MS,
+        psize=PSIZE_BYTES,
+        websocket_client=client,
+        max_ws_send=max_ws_send,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +131,35 @@ async def test_pop_bytes_returns_empty_when_empty():
     try:
         assert fc._pop_bytes(100) == b""
         assert fc._pop_bytes(0) == b""
+    finally:
+        await fc.close()
+
+
+# ---------------------------------------------------------------------------
+# send_chunks / max_ws_send
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_send_chunks_defaults_to_class_max_ws_send():
+    fc = _make_controller()
+    try:
+        assert fc._max_ws_send == FlowController.MAX_WS_SEND
+    finally:
+        await fc.close()
+
+
+@pytest.mark.asyncio
+async def test_send_chunks_respects_configured_max_ws_send():
+    """Buffered audio larger than max_ws_send is sent in capped chunks."""
+    max_ws_send = 100
+    fc = _make_controller(max_ws_send=max_ws_send)
+    try:
+        assert fc._max_ws_send == max_ws_send
+        fc(b"x" * 250)
+        await fc.send_chunks()
+        fc._websocket_client.send.assert_awaited_once_with(b"x" * max_ws_send)
+        assert fc._local_buffer_size == 150
     finally:
         await fc.close()
 
